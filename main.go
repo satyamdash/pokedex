@@ -51,11 +51,12 @@ func main() {
 		line := scanner.Text()
 		// fmt.Println(line)
 		list := cleanInput(line)
-		if list[0] == commands["exit"].name {
+		switch list[0] {
+		case commands["exit"].name:
 			if err := commands["exit"].callback(); err != nil {
 				fmt.Println(err)
 			}
-		} else if list[0] == commands["help"].name {
+		case commands["help"].name:
 			if err := commands["help"].callback(); err != nil {
 				fmt.Println(err)
 			}
