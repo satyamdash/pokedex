@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	liner "github.com/peterh/liner"
 	pokecache "github.com/satyamdash/pokedex/internal"
 )
 
@@ -288,7 +288,18 @@ func main() {
 		Cache:   pokecache.NewCache(5 * time.Second),
 		Pokedex: make(map[string]PokemonDetail),
 	}
-	scanner := bufio.NewScanner(os.Stdin)
+	line := liner.NewLiner()
+	defer line.Close()
+	line.SetCtrlCAborts(true) // allows Ctrl+C to exit
+
+	historyFile := ".pokedex_history"
+
+	// Load previous history from file
+	if f, err := os.Open(historyFile); err == nil {
+		line.ReadHistory(f)
+		f.Close()
+	}
+	//scanner := bufio.NewScanner(os.Stdin)
 	commands := map[string]cliCommand{
 		"exit": {
 			name:        "exit",
@@ -333,14 +344,18 @@ func main() {
 	}
 
 	for {
-		fmt.Print("Pokedex >")
-
-		if !scanner.Scan() {
+		input, err := line.Prompt("Pokedex > ")
+		if err != nil {
+			fmt.Println("Exiting...")
 			break
 		}
-		line := scanner.Text()
+		// if !scanner.Scan() {
+		// 	break
+		// }
+		list := cleanInput(input)
+		line.AppendHistory(input)
 		// fmt.Println(line)
-		list := cleanInput(line)
+		// list := cleanInput(line)
 		switch list[0] {
 		case commands["exit"].name:
 			if err := commands["exit"].callback(cfg); err != nil {
@@ -389,6 +404,11 @@ func main() {
 			if err := commands["pokedex"].callback(cfg); err != nil {
 				fmt.Println(err)
 			}
+		}
+		// Save history to file
+		if f, err := os.Create(historyFile); err == nil {
+			line.WriteHistory(f)
+			f.Close()
 		}
 		fmt.Printf("Your command was: %v\n", list[0])
 	}
