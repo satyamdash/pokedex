@@ -7,11 +7,15 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
+
+	pokecache "github.com/satyamdash/pokedex/internal"
 )
 
 type Config struct {
 	Next     string
 	Previous string
+	Cache    *pokecache.Cache
 }
 
 type cliCommand struct {
@@ -32,18 +36,34 @@ type Location struct {
 	URL  string `json:"url"`
 }
 
+func printLocations(location LocationResponse) {
+	for _, result := range location.Results {
+		fmt.Println(result.Name)
+	}
+}
+
 func commandExit(c *Config) error {
 	fmt.Print("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 func commandMapB(c *Config) error {
-	var url string
 	if c.Previous == "" {
 		fmt.Print("you're on the first page")
 		return nil
 	}
-	url = c.Previous
+	url := c.Previous
+	var location LocationResponse
+	stream, flag := c.Cache.Get(url)
+	if flag {
+		fmt.Println("------------------------------------Cache Hit----------------------------")
+		if err := json.Unmarshal(stream, &location); err != nil {
+			return err
+		}
+		printLocations(location)
+		return nil
+
+	}
 	res, err := http.Get(url)
 
 	if err != nil {
@@ -53,27 +73,38 @@ func commandMapB(c *Config) error {
 	defer res.Body.Close()
 	data, _ := io.ReadAll(res.Body)
 
-	var location LocationResponse
+	//Cache URL and data
+	c.Cache.Add(url, data)
+
 	if err := json.Unmarshal(data, &location); err != nil {
 		return err
 	}
 
 	c.Previous = location.Previous
-	var city []string
-	for _, result := range location.Results {
-		city = append(city, result.Name)
-	}
-	for _, cname := range city {
-		fmt.Println(cname)
-	}
+	printLocations(location)
 
 	return nil
 }
+
 func commandMap(c *Config) error {
 	var url string
-	url = "https://pokeapi.co/api/v2/location"
 	if c.Next != "" {
 		url = c.Next
+	} else {
+		url = "https://pokeapi.co/api/v2/location"
+	}
+
+	stream, flag := c.Cache.Get(url)
+	var location LocationResponse
+
+	if flag {
+		fmt.Println("------------------------------------Cache Hit----------------------------")
+		if err := json.Unmarshal(stream, &location); err != nil {
+			return err
+		}
+		printLocations(location)
+		return nil
+
 	}
 
 	res, err := http.Get(url)
@@ -85,7 +116,9 @@ func commandMap(c *Config) error {
 	defer res.Body.Close()
 	data, _ := io.ReadAll(res.Body)
 
-	var location LocationResponse
+	//Cache URL and data
+	c.Cache.Add(url, data)
+
 	if err := json.Unmarshal(data, &location); err != nil {
 		return err
 	}
@@ -95,13 +128,7 @@ func commandMap(c *Config) error {
 	// if *location.Previous != "null" {
 	// 	c.Previous = *location.Previous
 	// }
-	var city []string
-	for _, result := range location.Results {
-		city = append(city, result.Name)
-	}
-	for _, cname := range city {
-		fmt.Println(cname)
-	}
+	printLocations(location)
 
 	return nil
 }
@@ -115,8 +142,15 @@ exit: Exit the Pokedex`)
 	return nil
 }
 
+func commandExplore(c *Config) error {
+
+	return nil
+}
+
 func main() {
-	cfg := &Config{}
+	cfg := &Config{
+		Cache: pokecache.NewCache(5 * time.Second),
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	commands := map[string]cliCommand{
 		"exit": {
@@ -138,6 +172,11 @@ func main() {
 			name:        "mapb",
 			description: "Shows previous 20 location at once",
 			callback:    commandMapB,
+		},
+		"explore": {
+			name:        "explore",
+			description: "explore the given location",
+			callback:    commandExplore,
 		},
 	}
 
@@ -169,6 +208,9 @@ func main() {
 			if err := commands["mapb"].callback(cfg); err != nil {
 				fmt.Println(err)
 			}
+		case commands["explore"].name:
+			cityname := list[1]
+			println(cityname)
 		}
 		fmt.Printf("Your command was: %v\n", list[0])
 	}
